@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content"><channel><title>SForSwift</title><description>A description of SForSwift</description><link>https://your-website-url.com</link><language>en</language><lastBuildDate>Sat, 18 Apr 2020 18:53:31 +0200</lastBuildDate><pubDate>Sat, 18 Apr 2020 18:53:31 +0200</pubDate><ttl>250</ttl><atom:link href="https://your-website-url.com/feed.rss" rel="self" type="application/rss+xml"/><item><guid isPermaLink="true">https://your-website-url.com/posts/composition-using-keypath-and-dynamic-member-lookup</guid><title>Struct composition using KeyPath and @dynamicMemberLookup (kind of struct subclassing, but better)</title><description></description><link>https://your-website-url.com/posts/composition-using-keypath-and-dynamic-member-lookup</link><pubDate>Sat, 18 Apr 2020 00:00:00 +0200</pubDate><content:encoded><![CDATA[<h1>Struct composition using <code>KeyPath</code> and <code>@dynamicMemberLookup</code> (kind of struct subclassing, but better)</h1><p>Today I want to revisit struct composition in Swift. I will dive right into it, but if you need some extra context you can have a look at <a href="https://www.swiftbysundell.com/articles/composing-types-in-swift/">this article by John Sundell</a>.</p><p>Let's say that in our company there are several developers:</p><pre><code><span class="keyword">struct</span> Developer {
+    <span class="keyword">var</span> name: <span class="type">String</span>
+    <span class="keyword">var</span> age: <span class="type">Int</span>
+}
+</code></pre><p>Some of them work on site, and others remotelly. The ones working remotelly are based on a specific location:</p><pre><code><span class="keyword">struct</span> RemoteLocation {
+    <span class="keyword">var</span> country: <span class="type">String</span>
+    <span class="keyword">var</span> city: <span class="type">String</span>
+}
+</code></pre><p>Now, if we were using composition, a developer working remotelly would be declared and used as follows:</p><pre><code><span class="keyword">struct</span> RemoteDeveloper {
+    <span class="keyword">var</span> developer: <span class="type">Developer</span>
+    <span class="keyword">var</span> remoteLocation: <span class="type">RemoteLocation</span>
+}
+
+<span class="keyword">let</span> remoteDeveloper = <span class="type">RemoteDeveloper</span>(
+    developer: .<span class="keyword">init</span>(name: <span class="string">"Andres"</span>, age: <span class="number">26</span>),
+    remoteLocation: .<span class="keyword">init</span>(country: <span class="string">"Spain"</span>, city: <span class="string">"Madrid"</span>)
+)
+<span class="call">print</span>(remoteDeveloper.<span class="property">developer</span>.<span class="property">name</span>) <span class="comment">// Andres</span>
+<span class="call">print</span>(remoteDeveloper.<span class="property">remoteLocation</span>.<span class="property">city</span>) <span class="comment">// Madrid</span>
+</code></pre><p>See the problems?</p><ul><li>We need to declare a new <code>RemoteDeveloper</code> type.</li><li>Accessing the properties of a remote developer is verbose, as it requires accessing the nested structs.</li><li>These are just two structs: the more structs to compose, the more nested levels there will be.</li></ul><p>There are multiple ways to solve this problem, for example using computed properties, but they are verbose and not very elegant. In addition, things can get more complex if you need these structs to be decoded/encoded.</p><h2>Key paths and Dynamic Member Lookup to the rescue</h2><p>Ideally, our <code>RemoteDeveloper</code> struct would just put together the properties of a <code>Developer</code> and a <code>RemoteLocation</code>. Using <code>KeyPath</code> and <code>@dynamicMemberLookup</code> it is possible to simulate that.</p><p>Let's start by declaring the following type:</p><pre><code><span class="keyword">@dynamicMemberLookup
+struct</span> Compose&lt;Element1, Element2&gt; {
+    <span class="keyword">var</span> element1: <span class="type">Element1</span>
+    <span class="keyword">var</span> element2: <span class="type">Element2</span>
+
+    <span class="keyword">subscript</span>&lt;T&gt;(dynamicMember keyPath: <span class="type">WritableKeyPath</span>&lt;<span class="type">Element1</span>, <span class="type">T</span>&gt;) -&gt; <span class="type">T</span> {
+        <span class="keyword">get</span> { element1[keyPath: keyPath] }
+        <span class="keyword">set</span> { element1[keyPath: keyPath] = newValue }
+    }
+
+    <span class="keyword">subscript</span>&lt;T&gt;(dynamicMember keyPath: <span class="type">WritableKeyPath</span>&lt;<span class="type">Element2</span>, <span class="type">T</span>&gt;) -&gt; <span class="type">T</span> {
+        <span class="keyword">get</span> { element2[keyPath: keyPath] }
+        <span class="keyword">set</span> { element2[keyPath: keyPath] = newValue }
+    }
+
+    <span class="keyword">init</span>(<span class="keyword">_</span> element1: <span class="type">Element1</span>, <span class="keyword">_</span> element2: <span class="type">Element2</span>) {
+        <span class="keyword">self</span>.<span class="property">element1</span> = element1
+        <span class="keyword">self</span>.<span class="property">element2</span> = element2
+    }
+}
+</code></pre><p>Now, our remote developer can be declared as:</p><pre><code><span class="keyword">typealias</span> RemoteDeveloper = <span class="type">Compose</span>&lt;<span class="type">Developer</span>, <span class="type">RemoteLocation</span>&gt;
+</code></pre><p>And used as:</p><pre><code><span class="keyword">let</span> remoteDeveloper = <span class="type">RemoteDeveloper</span>(
+    .<span class="keyword">init</span>(name: <span class="string">"Andres"</span>, age: <span class="number">26</span>),
+    .<span class="keyword">init</span>(country: <span class="string">"Spain"</span>, city: <span class="string">"Madrid"</span>)
+)
+<span class="call">print</span>(remoteDeveloper.<span class="property">name</span>) <span class="comment">// Andres</span>
+<span class="call">print</span>(remoteDeveloper.<span class="property">city</span>) <span class="comment">// Madrid</span>
+</code></pre><p>Of course accessing the properties is type safe, and you also get autocompletion for them.</p><h2>Using it together with Codable</h2><p>To use this approach with <code>Codable</code>, we need to extend our <code>Compose</code> struct:</p><pre><code><span class="keyword">extension</span> <span class="type">Compose</span>: <span class="type">Encodable</span> <span class="keyword">where</span> <span class="type">Element1</span>: <span class="type">Encodable</span>, <span class="type">Element2</span>: <span class="type">Encodable</span> {
+    <span class="keyword">public func</span> encode(to encoder: <span class="type">Encoder</span>) <span class="keyword">throws</span> {
+        <span class="keyword">try</span> element1.<span class="call">encode</span>(to: encoder)
+        <span class="keyword">try</span> element2.<span class="call">encode</span>(to: encoder)
+    }
+}
+
+<span class="keyword">extension</span> <span class="type">Compose</span>: <span class="type">Decodable</span> <span class="keyword">where</span> <span class="type">Element1</span>: <span class="type">Decodable</span>, <span class="type">Element2</span>: <span class="type">Decodable</span> {
+    <span class="keyword">public init</span>(from decoder: <span class="type">Decoder</span>) <span class="keyword">throws</span> {
+        <span class="keyword">self</span>.<span class="property">element1</span> = <span class="keyword">try</span> <span class="type">Element1</span>(from: decoder)
+        <span class="keyword">self</span>.<span class="property">element2</span> = <span class="keyword">try</span> <span class="type">Element2</span>(from: decoder)
+    }
+}
+</code></pre><p>Now we can encode/decode our remote developer as follows:</p><pre><code><span class="keyword">let</span> remoteDeveloperJson = <span class="string">"""
+{
+    "age" : 26,
+    "city" : "Madrid",
+    "country" : "Spain",
+    "name" : "Andres"
+}
+"""</span>
+
+<span class="keyword">let</span> decoder = <span class="type">JSONDecoder</span>()
+<span class="keyword">let</span> remoteDeveloper = <span class="keyword">try</span> decoder.<span class="call">decode</span>(
+    <span class="type">RemoteDeveloper</span>.<span class="keyword">self</span>, 
+    from: <span class="type">Data</span>(remoteDeveloperJson.<span class="property">utf8</span>)
+)
+</code></pre><h2>Composing multiple structs</h2><p>It is also possible to compose multiple structs. For example, let's say that the previous remote developer is also a team lead:</p><pre><code><span class="keyword">struct</span> TeamLead: <span class="type">Codable</span>, <span class="type">Hashable</span> {
+    <span class="keyword">var</span> team: <span class="type">String</span>
+    <span class="keyword">var</span> salary: <span class="type">Int</span>
+}
+
+<span class="keyword">typealias</span> RemoteTeamLead = <span class="type">Compose</span>&lt;<span class="type">TeamLead</span>, <span class="type">RemoteDeveloper</span>&gt;
+<span class="comment">/*
+ Note. You could also do:
+   typealias Compose3&lt;T1, T2, T3&gt; = Compose&lt;T1, Compose&lt;T2, T3&gt;&gt;
+   typealias RemoteTeamLead = Compose3&lt;TeamLead, Developer, RemoteLocation&gt;
+ */</span>
+
+<span class="keyword">let</span> remoteTeamLead = <span class="type">RemoteTeamLead</span>(.<span class="keyword">init</span>(team: <span class="string">"iOS"</span>, salary: <span class="number">1000000</span>), remoteDeveloper)
+<span class="call">print</span>(remoteDeveloper.<span class="property">name</span>) <span class="comment">// Andres</span>
+<span class="call">print</span>(remoteDeveloper.<span class="property">city</span>) <span class="comment">// Madrid</span>
+<span class="call">print</span>(remoteTeamLead.<span class="property">team</span>) <span class="comment">// iOS</span>
+</code></pre><h2>Room for improvement</h2><p>At the moment <code>KeyPath</code> only supports properties, so for instance methods you will need to reach down the nested objects. You can work around this by declaring closures instead of functions, but it is not a very elegant solution. There has been <a href="https://forums.swift.org/t/keypath-and-methods/9261">some discussion about adding support for instance methods in <code>KeyPath</code></a>, but it did not get enough traction.</p><h2>Finally</h2><p>Yes, I put together a swift package with the <code>Compose</code> struct, so you can start using it all over the codebase right away 🎉</p><p>Find it here: <a href="https://github.com/acecilia/Compose">https://github.com/acecilia/Compose</a></p>]]></content:encoded></item></channel></rss>
